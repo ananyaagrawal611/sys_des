@@ -14,7 +14,7 @@ from .models import Answer, Topic, User, WebhookEvent
 from .providers import get_ai_provider, get_messaging_provider
 from .schemas import AnswerResponse, LeaderboardEntry, TopicResponse, WebhookMessage
 from .services import generate_topic, leaderboard, parse_answer, parse_webhook_payload, update_streak
-from .learning import handle_message, record_webhook_event, ensure_today_lesson, format_lesson
+from .learning import handle_message, record_webhook_event, ensure_today_lesson, format_lesson, ensure_users
 from sqlalchemy import delete
 from sqlalchemy.exc import SQLAlchemyError
 from .config import get_settings
@@ -100,6 +100,23 @@ def run_leaderboard(_: None = Depends(admin_auth), db: Session = Depends(get_db)
 @app.post("/admin/jobs/topics", response_model=TopicResponse)
 def run_topic_job(_: None = Depends(admin_auth), db: Session = Depends(get_db)) -> object:
     return generate_topic(db, get_ai_provider())
+
+
+@app.post("/admin/jobs/send-topic")
+def send_topic_job(_: None = Depends(admin_auth), db: Session = Depends(get_db)) -> dict[str, int | str]:
+    ensure_users(db)
+    lesson = ensure_today_lesson(db)
+    text = format_lesson(lesson)
+    provider = get_messaging_provider()
+    sent = 0
+    try:
+        for user in db.scalars(select(User)):
+            provider.send(user.phone_number, text)
+            sent += 1
+    except (RuntimeError, httpx.HTTPError) as exc:
+        logger.exception("Topic delivery failed", extra={"sent": sent})
+        raise HTTPException(status_code=502, detail="Unable to send today's topic") from exc
+    return {"status": "sent", "recipients": sent}
 
 
 @app.get("/webhooks/whatsapp")
