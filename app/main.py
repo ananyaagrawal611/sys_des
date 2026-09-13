@@ -1,6 +1,7 @@
 from datetime import date
 import hashlib
 import hmac
+import httpx
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from sqlalchemy import select
@@ -8,11 +9,13 @@ from sqlalchemy.orm import Session
 
 from .config import get_settings
 from .db import get_db, init_db
-from .models import Answer, Topic, User
+from .models import Answer, Topic, User, WebhookEvent
 from .providers import get_ai_provider, get_messaging_provider
 from .schemas import AnswerResponse, LeaderboardEntry, TopicResponse, WebhookMessage
 from .services import generate_topic, leaderboard, parse_answer, parse_webhook_payload, update_streak
 from .learning import handle_message, record_webhook_event, ensure_today_lesson, format_lesson
+from sqlalchemy import delete
+from sqlalchemy.exc import SQLAlchemyError
 from .config import get_settings
 
 app = FastAPI(title="SysDesign Streak", version="0.1.0")
@@ -129,7 +132,13 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> d
         return {"status": "ignored"}
     if not record_webhook_event(db, message.message_id):
         return {"status": "duplicate"}
-    handle_message(db, message.phone_number, message.text)
+    reply = handle_message(db, message.phone_number, message.text)
+    try:
+        get_messaging_provider().send(message.phone_number, reply)
+    except (RuntimeError, SQLAlchemyError, httpx.HTTPError) as exc:
+        db.execute(delete(WebhookEvent).where(WebhookEvent.provider_message_id == message.message_id))
+        db.commit()
+        raise HTTPException(status_code=502, detail="Unable to send WhatsApp response") from exc
     return {"status": "processed"}
 
 

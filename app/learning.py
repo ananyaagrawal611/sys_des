@@ -13,6 +13,13 @@ from .repositories import store
 from .services import update_streak
 
 
+def normalize_phone_number(phone: str) -> str:
+    digits = re.sub(r"\D", "", phone)
+    if not digits:
+        raise ValueError("Phone number must contain digits")
+    return f"+{digits}"
+
+
 def local_today() -> date:
     try:
         zone = ZoneInfo(get_settings().timezone)
@@ -26,6 +33,7 @@ def local_today() -> date:
 def ensure_users(db: Session) -> None:
     settings = get_settings()
     for name, phone in ((settings.user_1_name, settings.user_1_phone), (settings.user_2_name, settings.user_2_phone)):
+        phone = normalize_phone_number(phone)
         user = db.scalar(select(User).where(User.phone_number == phone))
         if user:
             user.display_name = name
@@ -58,7 +66,7 @@ def shared_status(db: Session, lesson) -> str:
 
 def handle_message(db: Session, phone: str, text: str) -> str:
     ensure_users(db)
-    user = db.scalar(select(User).where(User.phone_number == phone))
+    user = db.scalar(select(User).where(User.phone_number == normalize_phone_number(phone)))
     if not user:
         return "This phone number is not enrolled."
     lesson = ensure_today_lesson(db)
