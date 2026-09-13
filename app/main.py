@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,8 @@ from .models import Answer, Topic, User
 from .providers import get_ai_provider, get_messaging_provider
 from .schemas import AnswerResponse, LeaderboardEntry, TopicResponse, WebhookMessage
 from .services import generate_topic, leaderboard, parse_answer, parse_webhook_payload, update_streak
+from .learning import handle_message, record_webhook_event, ensure_today_lesson, format_lesson
+from .config import get_settings
 
 app = FastAPI(title="SysDesign Streak", version="0.1.0")
 
@@ -91,3 +93,49 @@ def run_leaderboard(_: None = Depends(admin_auth), db: Session = Depends(get_db)
 @app.post("/admin/jobs/topics", response_model=TopicResponse)
 def run_topic_job(_: None = Depends(admin_auth), db: Session = Depends(get_db)) -> object:
     return generate_topic(db, get_ai_provider())
+
+
+@app.get("/webhooks/whatsapp")
+def verify_whatsapp(
+    hub_mode: str = Query(alias="hub.mode"),
+    hub_verify_token: str = Query(alias="hub.verify_token"),
+    hub_challenge: str = Query(alias="hub.challenge"),
+) -> int:
+    if hub_mode == "subscribe" and hub_verify_token == get_settings().whatsapp_verify_token:
+        return int(hub_challenge)
+    raise HTTPException(status_code=403, detail="Webhook verification failed")
+
+
+@app.post("/webhooks/whatsapp")
+async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> dict[str, str]:
+    body = await request.json()
+    try:
+        message = parse_webhook_payload(body)
+    except ValueError:
+        return {"status": "ignored"}
+    if not record_webhook_event(db, message.message_id):
+        return {"status": "duplicate"}
+    handle_message(db, message.phone_number, message.text)
+    return {"status": "processed"}
+
+
+@app.post("/dev/messages")
+def dev_message(payload: dict, db: Session = Depends(get_db)) -> dict[str, str]:
+    return {"reply": handle_message(db, payload["phone"], payload["text"])}
+
+
+@app.post("/dev/send-daily")
+def dev_send_daily(db: Session = Depends(get_db)) -> dict[str, str]:
+    lesson = ensure_today_lesson(db)
+    for user in db.scalars(select(User)):
+        get_messaging_provider().send(user.phone_number, format_lesson(lesson))
+    return {"status": "sent"}
+
+
+@app.post("/dev/send-summary")
+def dev_send_summary(db: Session = Depends(get_db)) -> dict[str, str]:
+    lesson = ensure_today_lesson(db)
+    message = "Shared progress update\n" + handle_message(db, get_settings().user_1_phone, "STATUS")
+    for user in db.scalars(select(User)):
+        get_messaging_provider().send(user.phone_number, message)
+    return {"status": "sent"}

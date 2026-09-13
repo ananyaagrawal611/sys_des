@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 from datetime import date
+import json
+from pathlib import Path
 from typing import Protocol
 
 from .config import get_settings
@@ -12,10 +14,30 @@ class GeneratedTopic:
 
 
 @dataclass(frozen=True)
+class LessonQuestionDraft:
+    prompt: str
+    reference_answer: str
+
+
+@dataclass(frozen=True)
+class GeneratedLesson:
+    topic: str
+    content: str
+    questions: list[LessonQuestionDraft]
+
+
+@dataclass(frozen=True)
 class GradeResult:
     score: float
     correct: bool
     feedback: str
+    correctness: int = 0
+    tradeoff_reasoning: int = 0
+    limitation_awareness: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.correctness + self.tradeoff_reasoning + self.limitation_awareness
 
 
 class AIProvider(Protocol):
@@ -24,6 +46,16 @@ class AIProvider(Protocol):
 
 
 class MockAIProvider:
+    def generate_lesson(self, day_index: int) -> GeneratedLesson:
+        path = Path(__file__).parent / "data" / "curriculum.json"
+        lessons = json.loads(path.read_text(encoding="utf-8"))
+        item = lessons[day_index % len(lessons)]
+        return GeneratedLesson(
+            topic=item["topic"],
+            content=item["content"],
+            questions=[LessonQuestionDraft(**question) for question in item["questions"]],
+        )
+
     def generate_topic(self, day: date) -> GeneratedTopic:
         return GeneratedTopic(
             question=f"Q1: Design a URL shortener for 10 million daily users ({day.isoformat()}).",
@@ -35,7 +67,15 @@ class MockAIProvider:
         words = len(answer.split())
         score = min(1.0, words / 20)
         correct = words >= 5
-        return GradeResult(score=score, correct=correct, feedback="Good attempt." if correct else "Add more design detail.")
+        lower = answer.lower()
+        tradeoff_terms = ("but", "however", "trade-off", "latency", "cost")
+        limitation_terms = ("limit", "stale", "fail", "risk", "complex", "miss")
+        tradeoff = 2 if sum(term in lower for term in tradeoff_terms) >= 2 else int(any(term in lower for term in tradeoff_terms))
+        limitation = 2 if sum(term in lower for term in limitation_terms) >= 2 else int(any(term in lower for term in limitation_terms))
+        correctness = 2 if words >= 12 else int(bool(answer.strip()))
+        return GradeResult(score=score, correct=correct, feedback="Good attempt." if correct else "Add more design detail.",
+                           correctness=correctness, tradeoff_reasoning=tradeoff,
+                           limitation_awareness=limitation)
 
 
 class MessagingProvider(Protocol):

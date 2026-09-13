@@ -46,7 +46,18 @@ readiness check.
 The webhook parser intentionally accepts common WhatsApp-style JSON wrappers
 as well as a simple `{message_id, phone_number, text}` payload.
 
+## Curriculum and WhatsApp learning flow
+
+The archive curriculum is included in `app/data/curriculum.json`. The
+`/dev/messages` endpoint accepts `A1: ...`, `A2: ...`, `STATUS`, and `HELP`;
+answers are persisted in curriculum tables and scored on correctness,
+trade-offs, and limitations. `POST /webhooks/whatsapp` accepts the same
+WhatsApp Cloud payload shape and records message IDs before processing, so
+retries remain idempotent. Use `/dev/send-daily` and `/dev/send-summary` for
+local console delivery, or configure the existing provider adapters for a
+managed sender. The scripts directory contains equivalent scheduler-friendly
+commands.
+
 > **Production note:** WhatsApp Cloud API group support must be explicitly
 > verified before production. This MVP does not claim that group webhooks and
 > outbound group messaging are supported.
-

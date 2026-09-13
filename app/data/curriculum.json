@@ -1,0 +1,38 @@
+[
+  {
+    "topic": "Cache-aside vs write-through caching",
+    "content": "Cache-aside loads data only after a miss: the application reads the cache, fetches from the database on a miss, then fills the cache. It is simple and avoids caching unread data, but first reads are slower and stale entries require an invalidation policy. Write-through updates cache and database together. Reads stay warm and consistency is easier to reason about, but every write pays extra latency and may cache data that is never read.",
+    "questions": [
+      {
+        "prompt": "Why might cache-aside be preferable for a read-heavy catalog with a long tail of rarely viewed products?",
+        "reference_answer": "It caches only requested products, conserves cache capacity, and keeps the application in control; limitations include cold misses and invalidation complexity."
+      },
+      {
+        "prompt": "What failure mode appears if the database update succeeds but cache invalidation fails? How would you reduce the risk?",
+        "reference_answer": "Clients can read stale data. Use TTLs, retries, an outbox/event stream, versioned values, or delete-after-write policies depending on consistency requirements."
+      },
+      {
+        "prompt": "When would write-through be a poor choice even though it improves read freshness?",
+        "reference_answer": "When writes are high-volume, write latency is sensitive, cache capacity is limited, or much written data is never read."
+      }
+    ]
+  },
+  {
+    "topic": "Consistent hashing and virtual nodes",
+    "content": "Modulo sharding maps a key with hash(key) % N, but changing N remaps most keys. Consistent hashing places nodes and keys on a ring so membership changes move only a portion of keys. Virtual nodes give each physical node several ring positions, which improves balance and makes heterogeneous capacity easier to model. The trade-off is greater metadata and operational complexity.",
+    "questions": [
+      {
+        "prompt": "Why does modulo hashing behave badly when the cluster grows from N to N+1 nodes?",
+        "reference_answer": "The divisor changes, so most keys receive a new remainder and must move, causing cache misses or large-scale redistribution."
+      },
+      {
+        "prompt": "What limitation of basic consistent hashing do virtual nodes address, and what new cost do they introduce?",
+        "reference_answer": "They reduce uneven key distribution and support capacity weighting, but add ring metadata and more ownership transitions to manage."
+      },
+      {
+        "prompt": "When is simple modulo sharding still the better design?",
+        "reference_answer": "When membership is fixed, redistribution is already centrally managed, operational simplicity matters more, or the dataset is small enough to rebalance cheaply."
+      }
+    ]
+  }
+]
