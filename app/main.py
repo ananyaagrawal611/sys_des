@@ -2,6 +2,7 @@ from datetime import date
 import hashlib
 import hmac
 import httpx
+import logging
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from sqlalchemy import select
@@ -19,6 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from .config import get_settings
 
 app = FastAPI(title="SysDesign Streak", version="0.1.0")
+logger = logging.getLogger(__name__)
 
 
 @app.on_event("startup")
@@ -129,16 +131,25 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> d
     try:
         message = parse_webhook_payload(body)
     except ValueError:
-        return {"status": "ignored"}
+        value = body.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {}) if isinstance(body, dict) else {}
+        reason = "status_event" if value.get("statuses") and not value.get("messages") else "unsupported_payload"
+        logger.info("WhatsApp webhook ignored", extra={"reason": reason})
+        return {"status": "ignored", "reason": reason}
+    logger.info("WhatsApp message received", extra={"message_id": message.message_id})
     if not record_webhook_event(db, message.message_id):
+        logger.info("WhatsApp message duplicate", extra={"message_id": message.message_id})
         return {"status": "duplicate"}
     reply = handle_message(db, message.phone_number, message.text)
+    if reply == "This phone number is not enrolled.":
+        logger.warning("WhatsApp sender is not enrolled", extra={"message_id": message.message_id})
     try:
         get_messaging_provider().send(message.phone_number, reply)
     except (RuntimeError, SQLAlchemyError, httpx.HTTPError) as exc:
         db.execute(delete(WebhookEvent).where(WebhookEvent.provider_message_id == message.message_id))
         db.commit()
+        logger.exception("WhatsApp outbound send failed", extra={"message_id": message.message_id})
         raise HTTPException(status_code=502, detail="Unable to send WhatsApp response") from exc
+    logger.info("WhatsApp response sent", extra={"message_id": message.message_id})
     return {"status": "processed"}
 
 

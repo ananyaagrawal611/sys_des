@@ -39,3 +39,13 @@ def test_whatsapp_webhook_reports_outbound_failure(client, monkeypatch):
 
     assert response.status_code == 502
     assert response.json()["detail"] == "Unable to send WhatsApp response"
+
+
+def test_whatsapp_status_event_is_explicitly_ignored(client):
+    response = client.post(
+        "/webhooks/whatsapp",
+        json={"entry": [{"changes": [{"value": {"statuses": [{"id": "status-1"}]}}]}]},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ignored", "reason": "status_event"}
