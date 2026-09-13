@@ -13,7 +13,7 @@ def test_meta_provider_uses_bearer_token_without_logging(monkeypatch, capsys):
     monkeypatch.setenv("META_PHONE_NUMBER_ID", "123")
     get_settings.cache_clear()
     provider = MetaMessagingProvider()
-    assert provider.headers["Authorization"] == f"Bearer {token}"
+    assert provider.headers["Authorization"] == "Bearer " + token
     assert "******" not in provider.headers["Authorization"]
     assert token not in capsys.readouterr().out
     get_settings.cache_clear()

@@ -98,7 +98,7 @@ class MetaMessagingProvider:
             f"{settings.meta_phone_number_id}/messages"
         )
         self.headers = {
-            "Authorization": f"Bearer {settings.meta_access_token}",
+            "Authorization": "Bearer " + settings.meta_access_token,
             "Content-Type": "application/json",
         }
 
