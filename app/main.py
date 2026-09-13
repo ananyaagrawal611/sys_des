@@ -1,4 +1,6 @@
 from datetime import date
+import hashlib
+import hmac
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from sqlalchemy import select
@@ -108,7 +110,19 @@ def verify_whatsapp(
 
 @app.post("/webhooks/whatsapp")
 async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)) -> dict[str, str]:
-    body = await request.json()
+    raw_body = await request.body()
+    settings = get_settings()
+    if settings.meta_app_secret:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        expected = "sha256=" + hmac.new(
+            settings.meta_app_secret.encode("utf-8"), raw_body, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise HTTPException(status_code=403, detail="Invalid webhook signature")
+    try:
+        body = __import__("json").loads(raw_body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON") from exc
     try:
         message = parse_webhook_payload(body)
     except ValueError:

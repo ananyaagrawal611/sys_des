@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     user_2_phone: str = "+910000000002"
     whatsapp_provider: str = "console"
     whatsapp_verify_token: str = ""
+    meta_access_token: str | None = None
+    meta_phone_number_id: str | None = None
+    meta_graph_api_version: str = "v21.0"
+    meta_app_secret: str | None = None
     daily_send_hour: int = 20
     summary_send_hour: int = 22
 

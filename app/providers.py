@@ -3,6 +3,7 @@ from datetime import date
 import json
 from pathlib import Path
 from typing import Protocol
+import httpx
 
 from .config import get_settings
 
@@ -87,6 +88,32 @@ class ConsoleMessagingProvider:
         print(f"[message to {recipient}] {text}")
 
 
+class MetaMessagingProvider:
+    def __init__(self) -> None:
+        settings = get_settings()
+        if not settings.meta_access_token or not settings.meta_phone_number_id:
+            raise RuntimeError("Meta WhatsApp credentials are missing")
+        self.url = (
+            f"https://graph.facebook.com/{settings.meta_graph_api_version}/"
+            f"{settings.meta_phone_number_id}/messages"
+        )
+        self.headers = {
+            "Authorization": f"Bearer {settings.meta_access_token}",
+            "Content-Type": "application/json",
+        }
+
+    def send(self, recipient: str, text: str) -> None:
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": recipient.lstrip("+"),
+            "type": "text",
+            "text": {"body": text},
+        }
+        with httpx.Client(timeout=30) as client:
+            response = client.post(self.url, headers=self.headers, json=payload)
+            response.raise_for_status()
+
+
 def get_ai_provider() -> AIProvider:
     if get_settings().ai_provider.lower() != "mock":
         raise ValueError(f"Unsupported AI provider: {get_settings().ai_provider}")
@@ -94,6 +121,11 @@ def get_ai_provider() -> AIProvider:
 
 
 def get_messaging_provider() -> MessagingProvider:
-    if get_settings().messaging_provider.lower() not in {"console", "mock"}:
+    provider = get_settings().messaging_provider.lower()
+    if provider == "meta":
+        return MetaMessagingProvider()
+    if provider not in {"console", "mock"}:
         raise ValueError(f"Unsupported messaging provider: {get_settings().messaging_provider}")
     return ConsoleMessagingProvider()
+
+
